@@ -100,7 +100,7 @@ export default function LoginPage() {
               <br />
             </h2>
 
-            {/* Description */}
+            {    }
             <p className="text-xs sm:text-sm text-gray-200 leading-relaxed max-w-sm mx-auto drop-shadow-md">
               Authenticate to enter the APK Hunter command console. This portal is
               shielded with end-to-end encryption and monitored for intrusion

