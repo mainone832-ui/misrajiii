@@ -130,7 +130,7 @@ export default function SettingsPage() {
           <Link href="/all" className="text-xl font-extrabold italic leading-none text-[#8B0000] shrink-0">
             Anonymous
           </Link>
-          {/* Nav: horizontal scroll on small screens, no wrapping */}
+          {  }
           <nav className="flex items-center gap-4 text-sm font-semibold text-white sm:gap-6 sm:text-base overflow-x-auto whitespace-nowrap scrollbar-hide">
             <Link href="/all" className={`transition-colors ${pathname === "/all" ? "text-white" : "text-white/85 hover:text-white"}`}>
               Home
